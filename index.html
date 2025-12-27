@@ -868,58 +868,77 @@
 
         // Initialize all MediaPipe models
         async function initModels() {
+            // Start camera first (most important)
+            try {
+                currentCameraId = await getCameras();
+                await startCamera(currentCameraId);
+            } catch (e) {
+                console.error('Camera init error:', e);
+            }
+
             // Initialize Pose
-            pose = new Pose({
-                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${file}`
-            });
-            pose.setOptions({
-                modelComplexity: 1,
-                smoothLandmarks: true,
-                enableSegmentation: false,
-                minDetectionConfidence: 0.5,
-                minTrackingConfidence: 0.5
-            });
-            pose.onResults(onPoseResults);
-            await pose.initialize();
-            poseLoaded = true;
-            updateLoadingStatus('pose', true);
+            try {
+                pose = new Pose({
+                    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${file}`
+                });
+                pose.setOptions({
+                    modelComplexity: 1,
+                    smoothLandmarks: true,
+                    enableSegmentation: false,
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                });
+                pose.onResults(onPoseResults);
+                await pose.initialize();
+                poseLoaded = true;
+                updateLoadingStatus('pose', true);
+            } catch (e) {
+                console.error('Pose init error:', e);
+                updateLoadingStatus('pose', true); // Mark as done anyway
+            }
             checkAllLoaded();
 
             // Initialize Hands
-            hands = new Hands({
-                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`
-            });
-            hands.setOptions({
-                maxNumHands: 2,
-                modelComplexity: 1,
-                minDetectionConfidence: 0.5,
-                minTrackingConfidence: 0.5
-            });
-            hands.onResults(onHandsResults);
-            await hands.initialize();
-            handsLoaded = true;
-            updateLoadingStatus('hands', true);
+            try {
+                hands = new Hands({
+                    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`
+                });
+                hands.setOptions({
+                    maxNumHands: 2,
+                    modelComplexity: 1,
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                });
+                hands.onResults(onHandsResults);
+                await hands.initialize();
+                handsLoaded = true;
+                updateLoadingStatus('hands', true);
+            } catch (e) {
+                console.error('Hands init error:', e);
+                updateLoadingStatus('hands', true);
+            }
             checkAllLoaded();
 
             // Initialize Face Mesh
-            faceMesh = new FaceMesh({
-                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${file}`
-            });
-            faceMesh.setOptions({
-                maxNumFaces: 1,
-                refineLandmarks: true,
-                minDetectionConfidence: 0.5,
-                minTrackingConfidence: 0.5
-            });
-            faceMesh.onResults(onFaceResults);
-            await faceMesh.initialize();
-            faceLoaded = true;
-            updateLoadingStatus('face', true);
+            try {
+                faceMesh = new FaceMesh({
+                    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${file}`
+                });
+                faceMesh.setOptions({
+                    maxNumFaces: 1,
+                    refineLandmarks: true,
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                });
+                faceMesh.onResults(onFaceResults);
+                await faceMesh.initialize();
+                faceLoaded = true;
+                updateLoadingStatus('face', true);
+            } catch (e) {
+                console.error('Face init error:', e);
+                updateLoadingStatus('face', true);
+            }
             checkAllLoaded();
-
-            // Get camera ID and start
-            currentCameraId = await getCameras();
-            await startCamera(currentCameraId);
         }
 
         let processingStarted = false;
@@ -1724,9 +1743,37 @@
             if (e.touches.length > 1) e.preventDefault();
         }, { passive: false });
 
+        // Global error handler
+        window.onerror = function(msg, url, lineNo, columnNo, error) {
+            console.error('Global error:', msg, url, lineNo);
+            loading.innerHTML = `
+                <div style="color: #ff4757; font-size: 24px;">⚠️</div>
+                <div style="margin-top: 15px;">Error</div>
+                <div style="font-size: 12px; margin-top: 10px; opacity: 0.7;">
+                    ${msg}<br>Please refresh the page.
+                </div>
+            `;
+            return false;
+        };
+
         // Initialize
         initColorPickers();
-        initModels();
+
+        // Start initialization with error handling
+        (async () => {
+            try {
+                await initModels();
+            } catch (e) {
+                console.error('Init failed:', e);
+                loading.innerHTML = `
+                    <div style="color: #ff4757; font-size: 24px;">⚠️</div>
+                    <div style="margin-top: 15px;">Initialization Failed</div>
+                    <div style="font-size: 12px; margin-top: 10px; opacity: 0.7;">
+                        Please refresh the page and allow camera access.
+                    </div>
+                `;
+            }
+        })();
     </script>
 </body>
 </html>
