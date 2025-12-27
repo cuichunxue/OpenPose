@@ -573,9 +573,10 @@
 
         <div id="stats">
             <div>FPS: <span id="fps">--</span></div>
-            <div>Pose: <span id="poseStatus">--</span></div>
-            <div>Hands: <span id="handsStatus">--</span></div>
-            <div>Face: <span id="faceStatus">--</span></div>
+            <div>Pose: <span id="poseStatus">--</span> <span id="poseDebug" style="color:#888;font-size:9px;"></span></div>
+            <div>Hands: <span id="handsStatus">--</span> <span id="handsDebug" style="color:#888;font-size:9px;"></span></div>
+            <div>Face: <span id="faceStatus">--</span> <span id="faceDebug" style="color:#888;font-size:9px;"></span></div>
+            <div id="frameDebug" style="color:#888;font-size:9px;margin-top:4px;"></div>
         </div>
 
         <div id="modeTabs">
@@ -766,6 +767,11 @@
         const faceStatus = document.getElementById('faceStatus');
         const hint = document.getElementById('hint');
 
+        // Debug: Check if MediaPipe scripts loaded
+        console.log('MediaPipe Pose available:', typeof Pose !== 'undefined');
+        console.log('MediaPipe Hands available:', typeof Hands !== 'undefined');
+        console.log('MediaPipe FaceMesh available:', typeof FaceMesh !== 'undefined');
+
         // Hand landmark indices for finger tips
         const FINGER_TIPS = {
             thumb: 4,
@@ -879,6 +885,10 @@
             // Load all models in PARALLEL for faster startup
             const posePromise = (async () => {
                 try {
+                    if (typeof Pose === 'undefined') {
+                        throw new Error('Pose class not found - script may not have loaded');
+                    }
+                    console.log('Loading Pose model...');
                     pose = new Pose({
                         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${file}`
                     });
@@ -892,9 +902,12 @@
                     pose.onResults(onPoseResults);
                     await pose.initialize();
                     poseLoaded = true;
+                    console.log('Pose model loaded successfully');
                     updateLoadingStatus('pose', true);
                 } catch (e) {
                     console.error('Pose init error:', e);
+                    pose = null; // Set to null on failure
+                    poseLoaded = true; // Mark as done even if failed
                     updateLoadingStatus('pose', true);
                 }
                 checkAllLoaded();
@@ -902,6 +915,10 @@
 
             const handsPromise = (async () => {
                 try {
+                    if (typeof Hands === 'undefined') {
+                        throw new Error('Hands class not found - script may not have loaded');
+                    }
+                    console.log('Loading Hands model...');
                     hands = new Hands({
                         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`
                     });
@@ -914,9 +931,12 @@
                     hands.onResults(onHandsResults);
                     await hands.initialize();
                     handsLoaded = true;
+                    console.log('Hands model loaded successfully');
                     updateLoadingStatus('hands', true);
                 } catch (e) {
                     console.error('Hands init error:', e);
+                    hands = null; // Set to null on failure
+                    handsLoaded = true; // Mark as done even if failed
                     updateLoadingStatus('hands', true);
                 }
                 checkAllLoaded();
@@ -924,6 +944,10 @@
 
             const facePromise = (async () => {
                 try {
+                    if (typeof FaceMesh === 'undefined') {
+                        throw new Error('FaceMesh class not found - script may not have loaded');
+                    }
+                    console.log('Loading Face model...');
                     faceMesh = new FaceMesh({
                         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${file}`
                     });
@@ -936,9 +960,12 @@
                     faceMesh.onResults(onFaceResults);
                     await faceMesh.initialize();
                     faceLoaded = true;
+                    console.log('Face model loaded successfully');
                     updateLoadingStatus('face', true);
                 } catch (e) {
                     console.error('Face init error:', e);
+                    faceMesh = null; // Set to null on failure
+                    faceLoaded = true; // Mark as done even if failed
                     updateLoadingStatus('face', true);
                 }
                 checkAllLoaded();
@@ -946,6 +973,7 @@
 
             // Wait for all models to load
             await Promise.all([posePromise, handsPromise, facePromise]);
+            console.log('All models initialization completed');
         }
 
         let processingStarted = false;
@@ -1032,6 +1060,9 @@
             }
         }
 
+        let framesSent = 0;
+        let lastDebugTime = 0;
+
         async function processFrame() {
             if (!isRunning || isPlaybackMode) {
                 requestAnimationFrame(processFrame);
@@ -1050,14 +1081,26 @@
                 // Process based on mode - run in parallel for better performance
                 const promises = [];
 
+                // Debug: Log model states periodically
+                const now = Date.now();
+                if (now - lastDebugTime > 3000) {
+                    console.log('Model states - pose:', !!pose, 'poseLoaded:', poseLoaded,
+                                '| hands:', !!hands, 'handsLoaded:', handsLoaded,
+                                '| face:', !!faceMesh, 'faceLoaded:', faceLoaded);
+                    console.log('Video ready:', video.readyState, 'dimensions:', video.videoWidth, 'x', video.videoHeight);
+                    console.log('Frames sent to models:', framesSent);
+                    lastDebugTime = now;
+                }
+
                 if ((mode === 'all' || mode === 'pose') && pose && poseLoaded) {
-                    promises.push(pose.send({ image: video }).catch(e => console.log('Pose error:', e)));
+                    framesSent++;
+                    promises.push(pose.send({ image: video }).catch(e => console.log('Pose send error:', e)));
                 }
                 if ((mode === 'all' || mode === 'hands') && hands && handsLoaded) {
-                    promises.push(hands.send({ image: video }).catch(e => console.log('Hands error:', e)));
+                    promises.push(hands.send({ image: video }).catch(e => console.log('Hands send error:', e)));
                 }
                 if ((mode === 'all' || mode === 'face') && faceMesh && faceLoaded) {
-                    promises.push(faceMesh.send({ image: video }).catch(e => console.log('Face error:', e)));
+                    promises.push(faceMesh.send({ image: video }).catch(e => console.log('Face send error:', e)));
                 }
 
                 if (promises.length > 0) {
@@ -1073,16 +1116,32 @@
             requestAnimationFrame(processFrame);
         }
 
+        let poseResultCount = 0;
+        let handsResultCount = 0;
+        let faceResultCount = 0;
+
         function onPoseResults(results) {
             latestPoseResults = results;
+            poseResultCount++;
+            if (poseResultCount <= 3) {
+                console.log('Pose results received #' + poseResultCount + ', landmarks:', results.poseLandmarks?.length);
+            }
         }
 
         function onHandsResults(results) {
             latestHandsResults = results;
+            handsResultCount++;
+            if (handsResultCount <= 3) {
+                console.log('Hands results received #' + handsResultCount + ', hands:', results.multiHandLandmarks?.length);
+            }
         }
 
         function onFaceResults(results) {
             latestFaceResults = results;
+            faceResultCount++;
+            if (faceResultCount <= 3) {
+                console.log('Face results received #' + faceResultCount + ', faces:', results.multiFaceLandmarks?.length);
+            }
         }
 
         function render() {
@@ -1094,6 +1153,12 @@
                 fpsDisplay.textContent = currentFps;
                 frameCount = 0;
                 lastTime = now;
+
+                // Update debug info
+                document.getElementById('poseDebug').textContent = pose ? (poseLoaded ? 'ready' : 'loading') : 'null';
+                document.getElementById('handsDebug').textContent = hands ? (handsLoaded ? 'ready' : 'loading') : 'null';
+                document.getElementById('faceDebug').textContent = faceMesh ? (faceLoaded ? 'ready' : 'loading') : 'null';
+                document.getElementById('frameDebug').textContent = 'Sent:' + framesSent + ' P:' + poseResultCount + ' H:' + handsResultCount + ' F:' + faceResultCount;
             }
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
