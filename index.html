@@ -573,10 +573,10 @@
 
         <div id="stats">
             <div>FPS: <span id="fps">--</span></div>
-            <div>Pose: <span id="poseStatus">--</span> <span id="poseDebug" style="color:#888;font-size:9px;"></span></div>
-            <div>Hands: <span id="handsStatus">--</span> <span id="handsDebug" style="color:#888;font-size:9px;"></span></div>
-            <div>Face: <span id="faceStatus">--</span> <span id="faceDebug" style="color:#888;font-size:9px;"></span></div>
-            <div id="frameDebug" style="color:#888;font-size:9px;margin-top:4px;"></div>
+            <div>Pose: <span id="poseStatus">--</span></div>
+            <div>Hands: <span id="handsStatus">--</span></div>
+            <div>Face: <span id="faceStatus">--</span></div>
+            <div id="modelStatus" style="color:#FFD93D;margin-top:4px;">Loading...</div>
         </div>
 
         <div id="modeTabs">
@@ -677,11 +677,13 @@
         </div>
     </div>
 
-    <!-- MediaPipe Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js"></script>
+    <!-- TensorFlow.js + MediaPipe (better iOS support) -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/hand-pose-detection"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection"></script>
 
     <script>
         // Configuration
@@ -767,10 +769,11 @@
         const faceStatus = document.getElementById('faceStatus');
         const hint = document.getElementById('hint');
 
-        // Debug: Check if MediaPipe scripts loaded
-        console.log('MediaPipe Pose available:', typeof Pose !== 'undefined');
-        console.log('MediaPipe Hands available:', typeof Hands !== 'undefined');
-        console.log('MediaPipe FaceMesh available:', typeof FaceMesh !== 'undefined');
+        // Debug: Check if TensorFlow.js scripts loaded
+        console.log('TensorFlow.js available:', typeof tf !== 'undefined');
+        console.log('PoseDetection available:', typeof poseDetection !== 'undefined');
+        console.log('HandPoseDetection available:', typeof handPoseDetection !== 'undefined');
+        console.log('FaceLandmarksDetection available:', typeof faceLandmarksDetection !== 'undefined');
 
         // Hand landmark indices for finger tips
         const FINGER_TIPS = {
@@ -882,32 +885,37 @@
                 console.error('Camera init error:', e);
             }
 
+            // Initialize TensorFlow.js backend
+            try {
+                await tf.setBackend('webgl');
+                await tf.ready();
+                console.log('TensorFlow.js backend ready:', tf.getBackend());
+            } catch (e) {
+                console.error('TensorFlow.js init error:', e);
+            }
+
             // Load all models in PARALLEL for faster startup
             const posePromise = (async () => {
                 try {
-                    if (typeof Pose === 'undefined') {
-                        throw new Error('Pose class not found - script may not have loaded');
+                    if (typeof poseDetection === 'undefined') {
+                        throw new Error('poseDetection not found - script may not have loaded');
                     }
                     console.log('Loading Pose model...');
-                    pose = new Pose({
-                        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${file}`
-                    });
-                    pose.setOptions({
-                        modelComplexity: 1,
-                        smoothLandmarks: true,
-                        enableSegmentation: false,
-                        minDetectionConfidence: 0.5,
-                        minTrackingConfidence: 0.5
-                    });
-                    pose.onResults(onPoseResults);
-                    await pose.initialize();
+                    pose = await poseDetection.createDetector(
+                        poseDetection.SupportedModels.BlazePose,
+                        {
+                            runtime: 'tfjs',
+                            modelType: 'lite',
+                            enableSmoothing: true
+                        }
+                    );
                     poseLoaded = true;
                     console.log('Pose model loaded successfully');
                     updateLoadingStatus('pose', true);
                 } catch (e) {
                     console.error('Pose init error:', e);
-                    pose = null; // Set to null on failure
-                    poseLoaded = true; // Mark as done even if failed
+                    pose = null;
+                    poseLoaded = true;
                     updateLoadingStatus('pose', true);
                 }
                 checkAllLoaded();
@@ -915,28 +923,25 @@
 
             const handsPromise = (async () => {
                 try {
-                    if (typeof Hands === 'undefined') {
-                        throw new Error('Hands class not found - script may not have loaded');
+                    if (typeof handPoseDetection === 'undefined') {
+                        throw new Error('handPoseDetection not found - script may not have loaded');
                     }
                     console.log('Loading Hands model...');
-                    hands = new Hands({
-                        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`
-                    });
-                    hands.setOptions({
-                        maxNumHands: 2,
-                        modelComplexity: 1,
-                        minDetectionConfidence: 0.5,
-                        minTrackingConfidence: 0.5
-                    });
-                    hands.onResults(onHandsResults);
-                    await hands.initialize();
+                    hands = await handPoseDetection.createDetector(
+                        handPoseDetection.SupportedModels.MediaPipeHands,
+                        {
+                            runtime: 'tfjs',
+                            modelType: 'lite',
+                            maxHands: 2
+                        }
+                    );
                     handsLoaded = true;
                     console.log('Hands model loaded successfully');
                     updateLoadingStatus('hands', true);
                 } catch (e) {
                     console.error('Hands init error:', e);
-                    hands = null; // Set to null on failure
-                    handsLoaded = true; // Mark as done even if failed
+                    hands = null;
+                    handsLoaded = true;
                     updateLoadingStatus('hands', true);
                 }
                 checkAllLoaded();
@@ -944,28 +949,25 @@
 
             const facePromise = (async () => {
                 try {
-                    if (typeof FaceMesh === 'undefined') {
-                        throw new Error('FaceMesh class not found - script may not have loaded');
+                    if (typeof faceLandmarksDetection === 'undefined') {
+                        throw new Error('faceLandmarksDetection not found - script may not have loaded');
                     }
                     console.log('Loading Face model...');
-                    faceMesh = new FaceMesh({
-                        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${file}`
-                    });
-                    faceMesh.setOptions({
-                        maxNumFaces: 1,
-                        refineLandmarks: true,
-                        minDetectionConfidence: 0.5,
-                        minTrackingConfidence: 0.5
-                    });
-                    faceMesh.onResults(onFaceResults);
-                    await faceMesh.initialize();
+                    faceMesh = await faceLandmarksDetection.createDetector(
+                        faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh,
+                        {
+                            runtime: 'tfjs',
+                            refineLandmarks: true,
+                            maxFaces: 1
+                        }
+                    );
                     faceLoaded = true;
                     console.log('Face model loaded successfully');
                     updateLoadingStatus('face', true);
                 } catch (e) {
                     console.error('Face init error:', e);
-                    faceMesh = null; // Set to null on failure
-                    faceLoaded = true; // Mark as done even if failed
+                    faceMesh = null;
+                    faceLoaded = true;
                     updateLoadingStatus('face', true);
                 }
                 checkAllLoaded();
@@ -1094,13 +1096,46 @@
 
                 if ((mode === 'all' || mode === 'pose') && pose && poseLoaded) {
                     framesSent++;
-                    promises.push(pose.send({ image: video }).catch(e => console.log('Pose send error:', e)));
+                    promises.push(
+                        pose.estimatePoses(video, { flipHorizontal: false })
+                            .then(results => {
+                                if (results && results.length > 0) {
+                                    latestPoseResults = { poseLandmarks: convertPoseLandmarks(results[0]) };
+                                    poseResultCount++;
+                                } else {
+                                    latestPoseResults = null;
+                                }
+                            })
+                            .catch(e => console.log('Pose error:', e))
+                    );
                 }
                 if ((mode === 'all' || mode === 'hands') && hands && handsLoaded) {
-                    promises.push(hands.send({ image: video }).catch(e => console.log('Hands send error:', e)));
+                    promises.push(
+                        hands.estimateHands(video, { flipHorizontal: false })
+                            .then(results => {
+                                if (results && results.length > 0) {
+                                    latestHandsResults = convertHandsResults(results);
+                                    handsResultCount++;
+                                } else {
+                                    latestHandsResults = null;
+                                }
+                            })
+                            .catch(e => console.log('Hands error:', e))
+                    );
                 }
                 if ((mode === 'all' || mode === 'face') && faceMesh && faceLoaded) {
-                    promises.push(faceMesh.send({ image: video }).catch(e => console.log('Face send error:', e)));
+                    promises.push(
+                        faceMesh.estimateFaces(video, { flipHorizontal: false })
+                            .then(results => {
+                                if (results && results.length > 0) {
+                                    latestFaceResults = { multiFaceLandmarks: [convertFaceLandmarks(results[0])] };
+                                    faceResultCount++;
+                                } else {
+                                    latestFaceResults = null;
+                                }
+                            })
+                            .catch(e => console.log('Face error:', e))
+                    );
                 }
 
                 if (promises.length > 0) {
@@ -1120,28 +1155,40 @@
         let handsResultCount = 0;
         let faceResultCount = 0;
 
-        function onPoseResults(results) {
-            latestPoseResults = results;
-            poseResultCount++;
-            if (poseResultCount <= 3) {
-                console.log('Pose results received #' + poseResultCount + ', landmarks:', results.poseLandmarks?.length);
-            }
+        // Convert TensorFlow.js pose results to our format
+        function convertPoseLandmarks(poseResult) {
+            if (!poseResult || !poseResult.keypoints) return null;
+            // TensorFlow.js returns pixel coordinates, we need normalized (0-1)
+            return poseResult.keypoints.map(kp => ({
+                x: kp.x / canvas.width,
+                y: kp.y / canvas.height,
+                visibility: kp.score || 0.5
+            }));
         }
 
-        function onHandsResults(results) {
-            latestHandsResults = results;
-            handsResultCount++;
-            if (handsResultCount <= 3) {
-                console.log('Hands results received #' + handsResultCount + ', hands:', results.multiHandLandmarks?.length);
-            }
+        // Convert TensorFlow.js hands results to our format
+        function convertHandsResults(handsResults) {
+            if (!handsResults || handsResults.length === 0) return null;
+            return {
+                multiHandLandmarks: handsResults.map(hand =>
+                    hand.keypoints.map(kp => ({
+                        x: kp.x / canvas.width,
+                        y: kp.y / canvas.height
+                    }))
+                ),
+                multiHandedness: handsResults.map(hand => ({
+                    label: hand.handedness || 'Right'
+                }))
+            };
         }
 
-        function onFaceResults(results) {
-            latestFaceResults = results;
-            faceResultCount++;
-            if (faceResultCount <= 3) {
-                console.log('Face results received #' + faceResultCount + ', faces:', results.multiFaceLandmarks?.length);
-            }
+        // Convert TensorFlow.js face results to our format
+        function convertFaceLandmarks(faceResult) {
+            if (!faceResult || !faceResult.keypoints) return null;
+            return faceResult.keypoints.map(kp => ({
+                x: kp.x / canvas.width,
+                y: kp.y / canvas.height
+            }));
         }
 
         function render() {
@@ -1154,11 +1201,15 @@
                 frameCount = 0;
                 lastTime = now;
 
-                // Update debug info
-                document.getElementById('poseDebug').textContent = pose ? (poseLoaded ? 'ready' : 'loading') : 'null';
-                document.getElementById('handsDebug').textContent = hands ? (handsLoaded ? 'ready' : 'loading') : 'null';
-                document.getElementById('faceDebug').textContent = faceMesh ? (faceLoaded ? 'ready' : 'loading') : 'null';
-                document.getElementById('frameDebug').textContent = 'Sent:' + framesSent + ' P:' + poseResultCount + ' H:' + handsResultCount + ' F:' + faceResultCount;
+                // Update model status display
+                const modelStatusEl = document.getElementById('modelStatus');
+                if (modelStatusEl) {
+                    const poseOk = pose ? '✓' : '✗';
+                    const handsOk = hands ? '✓' : '✗';
+                    const faceOk = faceMesh ? '✓' : '✗';
+                    modelStatusEl.textContent = `P:${poseOk} H:${handsOk} F:${faceOk} | ${framesSent}→${poseResultCount}`;
+                    modelStatusEl.style.color = (pose || hands || faceMesh) ? '#00ff88' : '#ff4757';
+                }
             }
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
