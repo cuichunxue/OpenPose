@@ -1038,18 +1038,30 @@
                 return;
             }
 
+            // Ensure video is ready and has valid data
+            if (!video.srcObject || video.readyState < 2 || video.videoWidth === 0) {
+                requestAnimationFrame(processFrame);
+                return;
+            }
+
             const mode = config.mode;
 
             try {
-                // Process based on mode
-                if (mode === 'all' || mode === 'pose') {
-                    if (pose && poseLoaded) await pose.send({ image: video });
+                // Process based on mode - run in parallel for better performance
+                const promises = [];
+
+                if ((mode === 'all' || mode === 'pose') && pose && poseLoaded) {
+                    promises.push(pose.send({ image: video }).catch(e => console.log('Pose error:', e)));
                 }
-                if (mode === 'all' || mode === 'hands') {
-                    if (hands && handsLoaded) await hands.send({ image: video });
+                if ((mode === 'all' || mode === 'hands') && hands && handsLoaded) {
+                    promises.push(hands.send({ image: video }).catch(e => console.log('Hands error:', e)));
                 }
-                if (mode === 'all' || mode === 'face') {
-                    if (faceMesh && faceLoaded) await faceMesh.send({ image: video });
+                if ((mode === 'all' || mode === 'face') && faceMesh && faceLoaded) {
+                    promises.push(faceMesh.send({ image: video }).catch(e => console.log('Face error:', e)));
+                }
+
+                if (promises.length > 0) {
+                    await Promise.all(promises);
                 }
             } catch (e) {
                 console.error('Processing error:', e);
