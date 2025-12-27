@@ -421,6 +421,41 @@
             -webkit-backdrop-filter: blur(10px);
         }
 
+        #cameraFlipBtn {
+            position: fixed;
+            top: max(10px, env(safe-area-inset-top));
+            right: 118px;
+            z-index: 55;
+        }
+
+        .camera-flip-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.15);
+            border: none;
+            color: #fff;
+            font-size: 20px;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            transition: transform 0.3s, background 0.2s;
+        }
+
+        .camera-flip-btn:active {
+            transform: rotate(180deg);
+            background: rgba(255,255,255,0.25);
+        }
+
+        .camera-flip-btn.flipping {
+            animation: flipAnim 0.5s ease;
+        }
+
+        @keyframes flipAnim {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(180deg); }
+        }
+
         #fileInput {
             display: none;
         }
@@ -548,6 +583,10 @@
             <button class="mode-tab" onclick="setMode('pose')">Body</button>
             <button class="mode-tab" onclick="setMode('hands')">Hands</button>
             <button class="mode-tab" onclick="setMode('face')">Face</button>
+        </div>
+
+        <div id="cameraFlipBtn">
+            <button class="camera-flip-btn" onclick="flipCamera()" title="カメラ切替">🔄</button>
         </div>
 
         <div id="loadBtn">
@@ -1387,6 +1426,71 @@
             currentCameraId = deviceId;
             showHint('Switching camera...', 1500);
             await startCamera(deviceId);
+        }
+
+        // Flip between front and back camera
+        let currentFacingMode = 'user'; // 'user' = front, 'environment' = back
+
+        async function flipCamera() {
+            const btn = document.querySelector('.camera-flip-btn');
+            btn.classList.add('flipping');
+            setTimeout(() => btn.classList.remove('flipping'), 500);
+
+            // Toggle facing mode
+            currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+            const facingName = currentFacingMode === 'user' ? 'Front' : 'Back';
+            showHint(`${facingName} Camera`, 1500);
+
+            // Find camera with matching facing mode
+            const targetCamera = availableCameras.find(c => {
+                const label = c.label.toLowerCase();
+                if (currentFacingMode === 'environment') {
+                    return label.includes('back') || label.includes('rear') || label.includes('環境');
+                } else {
+                    return label.includes('front') || label.includes('user') || label.includes('facetime') || label.includes('前面');
+                }
+            });
+
+            if (targetCamera) {
+                currentCameraId = targetCamera.deviceId;
+                document.getElementById('cameraSelect').value = currentCameraId;
+                await startCamera(currentCameraId);
+            } else {
+                // Fallback: restart with facingMode constraint
+                await startCameraWithFacingMode(currentFacingMode);
+            }
+        }
+
+        async function startCameraWithFacingMode(facingMode) {
+            // Stop current stream
+            if (video.srcObject) {
+                video.srcObject.getTracks().forEach(track => track.stop());
+            }
+
+            const constraints = {
+                video: {
+                    facingMode: { ideal: facingMode },
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    frameRate: { ideal: 30, max: 30 }
+                }
+            };
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+                currentCameraId = stream.getVideoTracks()[0].getSettings().deviceId;
+
+                // Update dropdown
+                if (document.getElementById('cameraSelect')) {
+                    document.getElementById('cameraSelect').value = currentCameraId;
+                }
+            } catch (e) {
+                console.error('Camera flip error:', e);
+                showHint('Camera switch failed', 2000);
+                // Revert facing mode
+                currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+            }
         }
 
         // Playback functions
