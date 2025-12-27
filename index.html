@@ -876,69 +876,76 @@
                 console.error('Camera init error:', e);
             }
 
-            // Initialize Pose
-            try {
-                pose = new Pose({
-                    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${file}`
-                });
-                pose.setOptions({
-                    modelComplexity: 1,
-                    smoothLandmarks: true,
-                    enableSegmentation: false,
-                    minDetectionConfidence: 0.5,
-                    minTrackingConfidence: 0.5
-                });
-                pose.onResults(onPoseResults);
-                await pose.initialize();
-                poseLoaded = true;
-                updateLoadingStatus('pose', true);
-            } catch (e) {
-                console.error('Pose init error:', e);
-                updateLoadingStatus('pose', true); // Mark as done anyway
-            }
-            checkAllLoaded();
+            // Load all models in PARALLEL for faster startup
+            const posePromise = (async () => {
+                try {
+                    pose = new Pose({
+                        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${file}`
+                    });
+                    pose.setOptions({
+                        modelComplexity: 1,
+                        smoothLandmarks: true,
+                        enableSegmentation: false,
+                        minDetectionConfidence: 0.5,
+                        minTrackingConfidence: 0.5
+                    });
+                    pose.onResults(onPoseResults);
+                    await pose.initialize();
+                    poseLoaded = true;
+                    updateLoadingStatus('pose', true);
+                } catch (e) {
+                    console.error('Pose init error:', e);
+                    updateLoadingStatus('pose', true);
+                }
+                checkAllLoaded();
+            })();
 
-            // Initialize Hands
-            try {
-                hands = new Hands({
-                    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`
-                });
-                hands.setOptions({
-                    maxNumHands: 2,
-                    modelComplexity: 1,
-                    minDetectionConfidence: 0.5,
-                    minTrackingConfidence: 0.5
-                });
-                hands.onResults(onHandsResults);
-                await hands.initialize();
-                handsLoaded = true;
-                updateLoadingStatus('hands', true);
-            } catch (e) {
-                console.error('Hands init error:', e);
-                updateLoadingStatus('hands', true);
-            }
-            checkAllLoaded();
+            const handsPromise = (async () => {
+                try {
+                    hands = new Hands({
+                        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`
+                    });
+                    hands.setOptions({
+                        maxNumHands: 2,
+                        modelComplexity: 1,
+                        minDetectionConfidence: 0.5,
+                        minTrackingConfidence: 0.5
+                    });
+                    hands.onResults(onHandsResults);
+                    await hands.initialize();
+                    handsLoaded = true;
+                    updateLoadingStatus('hands', true);
+                } catch (e) {
+                    console.error('Hands init error:', e);
+                    updateLoadingStatus('hands', true);
+                }
+                checkAllLoaded();
+            })();
 
-            // Initialize Face Mesh
-            try {
-                faceMesh = new FaceMesh({
-                    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${file}`
-                });
-                faceMesh.setOptions({
-                    maxNumFaces: 1,
-                    refineLandmarks: true,
-                    minDetectionConfidence: 0.5,
-                    minTrackingConfidence: 0.5
-                });
-                faceMesh.onResults(onFaceResults);
-                await faceMesh.initialize();
-                faceLoaded = true;
-                updateLoadingStatus('face', true);
-            } catch (e) {
-                console.error('Face init error:', e);
-                updateLoadingStatus('face', true);
-            }
-            checkAllLoaded();
+            const facePromise = (async () => {
+                try {
+                    faceMesh = new FaceMesh({
+                        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${file}`
+                    });
+                    faceMesh.setOptions({
+                        maxNumFaces: 1,
+                        refineLandmarks: true,
+                        minDetectionConfidence: 0.5,
+                        minTrackingConfidence: 0.5
+                    });
+                    faceMesh.onResults(onFaceResults);
+                    await faceMesh.initialize();
+                    faceLoaded = true;
+                    updateLoadingStatus('face', true);
+                } catch (e) {
+                    console.error('Face init error:', e);
+                    updateLoadingStatus('face', true);
+                }
+                checkAllLoaded();
+            })();
+
+            // Wait for all models to load
+            await Promise.all([posePromise, handsPromise, facePromise]);
         }
 
         let processingStarted = false;
@@ -947,6 +954,7 @@
             // Stop previous video tracks
             if (video.srcObject) {
                 video.srcObject.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
             }
 
             const constraints = {
@@ -965,13 +973,25 @@
 
                 currentCameraId = stream.getVideoTracks()[0].getSettings().deviceId;
 
-                // Wait for video to be ready
-                await new Promise((resolve) => {
-                    if (video.readyState >= 2) {
-                        // Video is already ready
+                // Wait for video to be ready with timeout
+                await new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                        resolve(); // Resolve anyway after timeout
+                    }, 3000);
+
+                    const onReady = () => {
+                        clearTimeout(timeout);
+                        video.removeEventListener('loadeddata', onReady);
+                        video.removeEventListener('canplay', onReady);
+                        resolve();
+                    };
+
+                    if (video.readyState >= 3) {
+                        clearTimeout(timeout);
                         resolve();
                     } else {
-                        video.onloadeddata = () => resolve();
+                        video.addEventListener('loadeddata', onReady);
+                        video.addEventListener('canplay', onReady);
                     }
                 });
 
@@ -981,6 +1001,9 @@
                 } catch (playError) {
                     console.log('Autoplay prevented, user interaction needed');
                 }
+
+                // Wait a bit for dimensions to be available
+                await new Promise(r => setTimeout(r, 100));
 
                 // Update canvas dimensions
                 canvas.width = video.videoWidth || 1280;
@@ -1510,6 +1533,7 @@
             // Stop current stream
             if (video.srcObject) {
                 video.srcObject.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
             }
 
             const constraints = {
@@ -1526,12 +1550,23 @@
                 video.srcObject = stream;
                 currentCameraId = stream.getVideoTracks()[0].getSettings().deviceId;
 
-                // Wait for video to be ready
+                // Wait for video to be ready with timeout
                 await new Promise((resolve) => {
-                    if (video.readyState >= 2) {
+                    const timeout = setTimeout(() => resolve(), 3000);
+
+                    const onReady = () => {
+                        clearTimeout(timeout);
+                        video.removeEventListener('loadeddata', onReady);
+                        video.removeEventListener('canplay', onReady);
+                        resolve();
+                    };
+
+                    if (video.readyState >= 3) {
+                        clearTimeout(timeout);
                         resolve();
                     } else {
-                        video.onloadeddata = () => resolve();
+                        video.addEventListener('loadeddata', onReady);
+                        video.addEventListener('canplay', onReady);
                     }
                 });
 
@@ -1541,6 +1576,9 @@
                 } catch (playError) {
                     console.log('Autoplay prevented');
                 }
+
+                // Wait a bit for dimensions
+                await new Promise(r => setTimeout(r, 100));
 
                 // Update canvas dimensions
                 canvas.width = video.videoWidth || 1280;
