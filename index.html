@@ -948,23 +948,35 @@
 
                 // Wait for video to be ready
                 await new Promise((resolve) => {
-                    video.onloadedmetadata = () => {
-                        video.play();
+                    if (video.readyState >= 2) {
+                        // Video is already ready
                         resolve();
-                    };
+                    } else {
+                        video.onloadeddata = () => resolve();
+                    }
                 });
 
+                // Ensure video is playing
+                try {
+                    await video.play();
+                } catch (playError) {
+                    console.log('Autoplay prevented, user interaction needed');
+                }
+
                 // Update canvas dimensions
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-                ghostCanvas.width = video.videoWidth;
-                ghostCanvas.height = video.videoHeight;
+                canvas.width = video.videoWidth || 1280;
+                canvas.height = video.videoHeight || 720;
+                ghostCanvas.width = canvas.width;
+                ghostCanvas.height = canvas.height;
 
                 // Start processing loop only once
                 if (!processingStarted) {
                     processingStarted = true;
                     processFrame();
                 }
+
+                // Hide loading if visible
+                loading.classList.add('hidden');
 
             } catch (e) {
                 console.error('Camera error:', e);
@@ -1497,17 +1509,25 @@
 
                 // Wait for video to be ready
                 await new Promise((resolve) => {
-                    video.onloadedmetadata = () => {
-                        video.play();
+                    if (video.readyState >= 2) {
                         resolve();
-                    };
+                    } else {
+                        video.onloadeddata = () => resolve();
+                    }
                 });
 
+                // Ensure video is playing
+                try {
+                    await video.play();
+                } catch (playError) {
+                    console.log('Autoplay prevented');
+                }
+
                 // Update canvas dimensions
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-                ghostCanvas.width = video.videoWidth;
-                ghostCanvas.height = video.videoHeight;
+                canvas.width = video.videoWidth || 1280;
+                canvas.height = video.videoHeight || 720;
+                ghostCanvas.width = canvas.width;
+                ghostCanvas.height = canvas.height;
 
                 // Update dropdown
                 if (document.getElementById('cameraSelect')) {
