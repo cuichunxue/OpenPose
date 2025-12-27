@@ -677,13 +677,9 @@
         </div>
     </div>
 
-    <!-- TensorFlow.js + MediaPipe (better iOS support) -->
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/hand-pose-detection"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection"></script>
+    <!-- TensorFlow.js with MoveNet (most reliable on mobile) -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.0/dist/pose-detection.min.js"></script>
 
     <script>
         // Configuration
@@ -886,96 +882,52 @@
             }
 
             // Initialize TensorFlow.js backend
+            const statusEl = document.getElementById('modelStatus');
             try {
+                statusEl.textContent = 'TF.js initializing...';
                 await tf.setBackend('webgl');
                 await tf.ready();
                 console.log('TensorFlow.js backend ready:', tf.getBackend());
+                statusEl.textContent = 'TF.js ready: ' + tf.getBackend();
             } catch (e) {
                 console.error('TensorFlow.js init error:', e);
+                statusEl.textContent = 'TF.js error: ' + e.message;
+                statusEl.style.color = '#ff4757';
             }
 
-            // Load all models in PARALLEL for faster startup
-            const posePromise = (async () => {
-                try {
-                    if (typeof poseDetection === 'undefined') {
-                        throw new Error('poseDetection not found - script may not have loaded');
-                    }
-                    console.log('Loading Pose model...');
-                    pose = await poseDetection.createDetector(
-                        poseDetection.SupportedModels.BlazePose,
-                        {
-                            runtime: 'tfjs',
-                            modelType: 'lite',
-                            enableSmoothing: true
-                        }
-                    );
-                    poseLoaded = true;
-                    console.log('Pose model loaded successfully');
-                    updateLoadingStatus('pose', true);
-                } catch (e) {
-                    console.error('Pose init error:', e);
-                    pose = null;
-                    poseLoaded = true;
-                    updateLoadingStatus('pose', true);
-                }
-                checkAllLoaded();
-            })();
+            // Load MoveNet model (most reliable for mobile)
+            try {
+                statusEl.textContent = 'Loading MoveNet...';
+                console.log('Loading MoveNet model...');
 
-            const handsPromise = (async () => {
-                try {
-                    if (typeof handPoseDetection === 'undefined') {
-                        throw new Error('handPoseDetection not found - script may not have loaded');
+                pose = await poseDetection.createDetector(
+                    poseDetection.SupportedModels.MoveNet,
+                    {
+                        modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING
                     }
-                    console.log('Loading Hands model...');
-                    hands = await handPoseDetection.createDetector(
-                        handPoseDetection.SupportedModels.MediaPipeHands,
-                        {
-                            runtime: 'tfjs',
-                            modelType: 'lite',
-                            maxHands: 2
-                        }
-                    );
-                    handsLoaded = true;
-                    console.log('Hands model loaded successfully');
-                    updateLoadingStatus('hands', true);
-                } catch (e) {
-                    console.error('Hands init error:', e);
-                    hands = null;
-                    handsLoaded = true;
-                    updateLoadingStatus('hands', true);
-                }
-                checkAllLoaded();
-            })();
+                );
+                poseLoaded = true;
+                console.log('MoveNet model loaded successfully');
+                updateLoadingStatus('pose', true);
+                statusEl.textContent = 'MoveNet loaded ✓';
+                statusEl.style.color = '#00ff88';
+            } catch (e) {
+                console.error('MoveNet init error:', e);
+                pose = null;
+                poseLoaded = true;
+                updateLoadingStatus('pose', true);
+                statusEl.textContent = 'MoveNet error: ' + e.message;
+                statusEl.style.color = '#ff4757';
+            }
 
-            const facePromise = (async () => {
-                try {
-                    if (typeof faceLandmarksDetection === 'undefined') {
-                        throw new Error('faceLandmarksDetection not found - script may not have loaded');
-                    }
-                    console.log('Loading Face model...');
-                    faceMesh = await faceLandmarksDetection.createDetector(
-                        faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh,
-                        {
-                            runtime: 'tfjs',
-                            refineLandmarks: true,
-                            maxFaces: 1
-                        }
-                    );
-                    faceLoaded = true;
-                    console.log('Face model loaded successfully');
-                    updateLoadingStatus('face', true);
-                } catch (e) {
-                    console.error('Face init error:', e);
-                    faceMesh = null;
-                    faceLoaded = true;
-                    updateLoadingStatus('face', true);
-                }
-                checkAllLoaded();
-            })();
+            // Mark hands and face as loaded (not using for now)
+            handsLoaded = true;
+            faceLoaded = true;
+            updateLoadingStatus('hands', true);
+            updateLoadingStatus('face', true);
 
-            // Wait for all models to load
-            await Promise.all([posePromise, handsPromise, facePromise]);
-            console.log('All models initialization completed');
+            checkAllLoaded();
+            console.log('Model initialization completed');
         }
 
         let processingStarted = false;
@@ -1313,10 +1265,19 @@
         }
 
         function drawPoseSkeleton(landmarks) {
+            // MoveNet keypoint indices:
+            // 0:nose, 1:left_eye, 2:right_eye, 3:left_ear, 4:right_ear
+            // 5:left_shoulder, 6:right_shoulder, 7:left_elbow, 8:right_elbow
+            // 9:left_wrist, 10:right_wrist, 11:left_hip, 12:right_hip
+            // 13:left_knee, 14:right_knee, 15:left_ankle, 16:right_ankle
             const connections = [
-                [11, 12], [11, 23], [12, 24], [23, 24],
-                [11, 13], [13, 15], [12, 14], [14, 16],
-                [23, 25], [25, 27], [24, 26], [26, 28]
+                [5, 6],   // shoulders
+                [5, 7], [7, 9],   // left arm
+                [6, 8], [8, 10],  // right arm
+                [5, 11], [6, 12], // torso
+                [11, 12], // hips
+                [11, 13], [13, 15], // left leg
+                [12, 14], [14, 16]  // right leg
             ];
 
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
@@ -1334,13 +1295,15 @@
                 }
             });
 
-            const keyJoints = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
+            // MoveNet: 5-16 are body joints
+            const keyJoints = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
             keyJoints.forEach(i => {
                 const landmark = landmarks[i];
-                if (landmark.visibility > 0.5) {
+                if (landmark && landmark.visibility > 0.3) {
                     ctx.beginPath();
                     ctx.arc(landmark.x * canvas.width, landmark.y * canvas.height, 6, 0, 2 * Math.PI);
-                    ctx.fillStyle = i === 15 ? config.rightColor : i === 16 ? config.leftColor : 'rgba(255,255,255,0.9)';
+                    // 9=left_wrist, 10=right_wrist
+                    ctx.fillStyle = i === 10 ? config.rightColor : i === 9 ? config.leftColor : 'rgba(255,255,255,0.9)';
                     ctx.fill();
                 }
             });
@@ -1448,8 +1411,9 @@
         }
 
         function updateWristTrailsFromPose(landmarks) {
-            const leftWrist = landmarks[16];
-            const rightWrist = landmarks[15];
+            // MoveNet: 9=left_wrist, 10=right_wrist
+            const leftWrist = landmarks[9];
+            const rightWrist = landmarks[10];
 
             if (leftWrist && leftWrist.visibility > 0.5 && config.leftTrail) {
                 leftWristTrail.push({
