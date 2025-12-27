@@ -1,0 +1,1307 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#000000">
+    <title>Motion Tracker</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #000;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            touch-action: none;
+            position: fixed;
+        }
+
+        #container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #video {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+
+        #canvas {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        #ghostCanvas {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-size: 18px;
+            text-align: center;
+            z-index: 100;
+            background: rgba(0,0,0,0.8);
+            padding: 30px 40px;
+            border-radius: 20px;
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid rgba(255,255,255,0.2);
+            border-top-color: #00ff88;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        #controls {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 15px;
+            padding-bottom: max(15px, env(safe-area-inset-bottom));
+            background: linear-gradient(transparent, rgba(0,0,0,0.9));
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 12px;
+            z-index: 50;
+        }
+
+        .btn {
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: 600;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            min-width: 80px;
+            white-space: nowrap;
+        }
+
+        .btn:active {
+            transform: scale(0.92);
+            opacity: 0.9;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #00ff88, #00cc6a);
+            color: #000;
+            box-shadow: 0 4px 15px rgba(0, 255, 136, 0.3);
+        }
+
+        .btn-secondary {
+            background: rgba(255,255,255,0.15);
+            color: #fff;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ff4757, #ff2d3d);
+            color: #fff;
+            box-shadow: 0 4px 15px rgba(255, 71, 87, 0.3);
+        }
+
+        .btn-icon {
+            width: 50px;
+            height: 50px;
+            min-width: 50px;
+            padding: 0;
+            border-radius: 50%;
+            font-size: 20px;
+        }
+
+        #stats {
+            position: fixed;
+            top: max(10px, env(safe-area-inset-top));
+            left: 10px;
+            color: #00ff88;
+            font-size: 11px;
+            font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+            background: rgba(0,0,0,0.7);
+            padding: 10px 14px;
+            border-radius: 12px;
+            z-index: 50;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            line-height: 1.6;
+        }
+
+        #settings {
+            position: fixed;
+            top: max(10px, env(safe-area-inset-top));
+            right: 10px;
+            z-index: 60;
+        }
+
+        .settings-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.15);
+            border: none;
+            color: #fff;
+            font-size: 20px;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            transition: transform 0.2s, background 0.2s;
+        }
+
+        .settings-btn:active {
+            transform: scale(0.9);
+            background: rgba(255,255,255,0.25);
+        }
+
+        #settingsPanel {
+            position: absolute;
+            top: 55px;
+            right: 0;
+            background: rgba(25,25,25,0.95);
+            border-radius: 20px;
+            padding: 8px;
+            min-width: 300px;
+            max-width: calc(100vw - 30px);
+            display: none;
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+            max-height: calc(100vh - 150px);
+            overflow-y: auto;
+        }
+
+        #settingsPanel.show {
+            display: block;
+            animation: slideIn 0.2s ease;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-10px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .setting-section {
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+
+        .setting-section:last-child {
+            border-bottom: none;
+        }
+
+        .setting-title {
+            font-size: 11px;
+            color: rgba(255,255,255,0.5);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+        }
+
+        .setting-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            color: #fff;
+            font-size: 14px;
+        }
+
+        .toggle {
+            position: relative;
+            width: 50px;
+            height: 30px;
+            background: #3a3a3c;
+            border-radius: 15px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .toggle.active {
+            background: #00ff88;
+        }
+
+        .toggle::after {
+            content: '';
+            position: absolute;
+            width: 26px;
+            height: 26px;
+            background: #fff;
+            border-radius: 50%;
+            top: 2px;
+            left: 2px;
+            transition: transform 0.3s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .toggle.active::after {
+            transform: translateX(20px);
+        }
+
+        select {
+            background: #3a3a3c;
+            color: #fff;
+            border: none;
+            padding: 10px 14px;
+            border-radius: 10px;
+            font-size: 14px;
+            max-width: 140px;
+        }
+
+        input[type="range"] {
+            width: 100px;
+            accent-color: #00ff88;
+            height: 6px;
+        }
+
+        .color-picker {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .color-dot {
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .color-dot:active {
+            transform: scale(0.9);
+        }
+
+        .color-dot.selected {
+            border-color: #fff;
+            box-shadow: 0 0 0 2px rgba(0,0,0,0.3);
+        }
+
+        #hint {
+            position: fixed;
+            bottom: 90px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #fff;
+            font-size: 13px;
+            text-align: center;
+            z-index: 40;
+            background: rgba(0,0,0,0.7);
+            padding: 10px 20px;
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            opacity: 0;
+            transition: opacity 0.4s;
+            pointer-events: none;
+        }
+
+        #hint.show {
+            opacity: 1;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* Playback UI */
+        #playbackControls {
+            position: fixed;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(25,25,25,0.95);
+            padding: 15px 20px;
+            border-radius: 20px;
+            display: none;
+            align-items: center;
+            gap: 15px;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            z-index: 55;
+        }
+
+        #playbackControls.show {
+            display: flex;
+        }
+
+        #playbackSlider {
+            width: 150px;
+            accent-color: #00ff88;
+        }
+
+        #playbackTime {
+            color: #fff;
+            font-size: 12px;
+            font-family: monospace;
+            min-width: 80px;
+            text-align: center;
+        }
+
+        /* File upload button */
+        #loadBtn {
+            position: fixed;
+            top: max(10px, env(safe-area-inset-top));
+            right: 64px;
+            z-index: 55;
+        }
+
+        .load-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.15);
+            border: none;
+            color: #fff;
+            font-size: 18px;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        /* Comparison mode indicator */
+        #comparisonIndicator {
+            position: fixed;
+            top: 70px;
+            right: 10px;
+            background: rgba(100, 100, 255, 0.8);
+            color: #fff;
+            padding: 8px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            display: none;
+            z-index: 45;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        #comparisonIndicator.show {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Speed control */
+        .speed-btn {
+            background: #3a3a3c;
+            color: #fff;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .speed-btn.active {
+            background: #00ff88;
+            color: #000;
+        }
+
+        @media (max-width: 380px) {
+            .btn {
+                padding: 10px 14px;
+                font-size: 12px;
+                min-width: 60px;
+            }
+            .btn-icon {
+                width: 44px;
+                height: 44px;
+                min-width: 44px;
+                font-size: 18px;
+            }
+            #settingsPanel {
+                min-width: 280px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <video id="video" playsinline autoplay muted></video>
+        <canvas id="ghostCanvas"></canvas>
+        <canvas id="canvas"></canvas>
+
+        <div id="loading">
+            <div class="spinner"></div>
+            <div>AI Model Loading...</div>
+            <div style="font-size: 12px; margin-top: 10px; opacity: 0.7;">初回は少し時間がかかります</div>
+        </div>
+
+        <div id="stats">
+            <div>FPS: <span id="fps">--</span></div>
+            <div>Status: <span id="trackingStatus">--</span></div>
+        </div>
+
+        <div id="loadBtn">
+            <button class="load-btn" onclick="document.getElementById('fileInput').click()">📂</button>
+            <input type="file" id="fileInput" accept=".json" onchange="loadRecording(event)">
+        </div>
+
+        <div id="settings">
+            <button class="settings-btn" onclick="toggleSettings()">⚙️</button>
+            <div id="settingsPanel">
+                <div class="setting-section">
+                    <div class="setting-title">Display</div>
+                    <div class="setting-row">
+                        <span>Skeleton</span>
+                        <div class="toggle active" id="toggleSkeleton" onclick="toggleOption('skeleton')"></div>
+                    </div>
+                    <div class="setting-row">
+                        <span>Left Trail (青)</span>
+                        <div class="toggle active" id="toggleLeftTrail" onclick="toggleOption('leftTrail')"></div>
+                    </div>
+                    <div class="setting-row">
+                        <span>Right Trail (赤)</span>
+                        <div class="toggle active" id="toggleRightTrail" onclick="toggleOption('rightTrail')"></div>
+                    </div>
+                </div>
+                <div class="setting-section">
+                    <div class="setting-title">Trail Settings</div>
+                    <div class="setting-row">
+                        <span>Length</span>
+                        <input type="range" id="trailLengthSlider" min="20" max="300" value="120" onchange="updateTrailLength(this.value)">
+                    </div>
+                    <div class="setting-row">
+                        <span>Left Color</span>
+                        <div class="color-picker" id="leftColorPicker"></div>
+                    </div>
+                    <div class="setting-row">
+                        <span>Right Color</span>
+                        <div class="color-picker" id="rightColorPicker"></div>
+                    </div>
+                </div>
+                <div class="setting-section">
+                    <div class="setting-title">Camera</div>
+                    <div class="setting-row">
+                        <span>Source</span>
+                        <select id="cameraSelect" onchange="switchCamera(this.value)"></select>
+                    </div>
+                </div>
+                <div class="setting-section">
+                    <div class="setting-title">Performance</div>
+                    <div class="setting-row">
+                        <span>Quality</span>
+                        <select id="qualitySelect" onchange="updateQuality(this.value)">
+                            <option value="0">Lite (Fast)</option>
+                            <option value="1" selected>Full (Balance)</option>
+                            <option value="2">Heavy (Accurate)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="comparisonIndicator">
+            <span>👻 Ghost Mode</span>
+            <button onclick="stopComparison()" style="background:none;border:none;color:#fff;font-size:16px;cursor:pointer;">✕</button>
+        </div>
+
+        <div id="hint"></div>
+
+        <div id="playbackControls">
+            <button class="btn btn-icon btn-secondary" id="playPauseBtn" onclick="togglePlayback()">▶️</button>
+            <input type="range" id="playbackSlider" min="0" max="100" value="0" oninput="seekPlayback(this.value)">
+            <span id="playbackTime">0:00 / 0:00</span>
+            <div style="display:flex;gap:4px;">
+                <button class="speed-btn" onclick="setSpeed(0.5)">0.5x</button>
+                <button class="speed-btn active" onclick="setSpeed(1)">1x</button>
+                <button class="speed-btn" onclick="setSpeed(2)">2x</button>
+            </div>
+        </div>
+
+        <div id="controls">
+            <button class="btn btn-icon btn-secondary" onclick="clearTrails()" title="Clear">🗑️</button>
+            <button class="btn btn-primary" id="recordBtn" onclick="toggleRecording()">
+                <span>⏺</span> Record
+            </button>
+            <button class="btn btn-icon btn-secondary" id="pauseBtn" onclick="togglePause()" title="Pause">⏸️</button>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js"></script>
+
+    <script>
+        // Configuration
+        const config = {
+            skeleton: true,
+            leftTrail: true,
+            rightTrail: true,
+            trailLength: 120,
+            leftColor: '#00BFFF',
+            rightColor: '#FF6B6B',
+            smoothing: 0.4,
+            modelComplexity: 1
+        };
+
+        const colors = ['#00BFFF', '#FF6B6B', '#00FF88', '#FFD93D', '#FF6EC7', '#A855F7', '#FFFFFF'];
+
+        // State
+        let pose = null;
+        let camera = null;
+        let isRunning = true;
+        let isRecording = false;
+        let recordedFrames = [];
+        let leftTrail = [];
+        let rightTrail = [];
+        let lastLeftWrist = null;
+        let lastRightWrist = null;
+        let frameCount = 0;
+        let lastTime = performance.now();
+        let currentFps = 0;
+        let availableCameras = [];
+        let currentCameraId = null;
+
+        // Playback state
+        let isPlaybackMode = false;
+        let isPlaying = false;
+        let playbackData = null;
+        let playbackIndex = 0;
+        let playbackSpeed = 1;
+        let playbackAnimationId = null;
+        let lastPlaybackTime = 0;
+
+        // DOM Elements
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const ghostCanvas = document.getElementById('ghostCanvas');
+        const ghostCtx = ghostCanvas.getContext('2d');
+        const loading = document.getElementById('loading');
+        const fpsDisplay = document.getElementById('fps');
+        const trackingStatus = document.getElementById('trackingStatus');
+        const hint = document.getElementById('hint');
+
+        // Initialize color pickers
+        function initColorPickers() {
+            const leftPicker = document.getElementById('leftColorPicker');
+            const rightPicker = document.getElementById('rightColorPicker');
+
+            colors.forEach(color => {
+                const leftDot = document.createElement('div');
+                leftDot.className = 'color-dot' + (color === config.leftColor ? ' selected' : '');
+                leftDot.style.background = color;
+                leftDot.onclick = (e) => selectColor('left', color, leftPicker, e);
+                leftPicker.appendChild(leftDot);
+
+                const rightDot = document.createElement('div');
+                rightDot.className = 'color-dot' + (color === config.rightColor ? ' selected' : '');
+                rightDot.style.background = color;
+                rightDot.onclick = (e) => selectColor('right', color, rightPicker, e);
+                rightPicker.appendChild(rightDot);
+            });
+        }
+
+        function selectColor(side, color, picker, e) {
+            picker.querySelectorAll('.color-dot').forEach(d => d.classList.remove('selected'));
+            e.target.classList.add('selected');
+            if (side === 'left') config.leftColor = color;
+            else config.rightColor = color;
+        }
+
+        // Show hint message
+        function showHint(message, duration = 2000) {
+            hint.textContent = message;
+            hint.classList.add('show');
+            setTimeout(() => hint.classList.remove('show'), duration);
+        }
+
+        // Get available cameras
+        async function getCameras() {
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                availableCameras = devices.filter(d => d.kind === 'videoinput');
+
+                const select = document.getElementById('cameraSelect');
+                select.innerHTML = '';
+                availableCameras.forEach((cam, i) => {
+                    const option = document.createElement('option');
+                    option.value = cam.deviceId;
+                    option.text = cam.label || `Camera ${i + 1}`;
+                    select.appendChild(option);
+                });
+
+                // Prefer back camera on mobile
+                const backCamera = availableCameras.find(c =>
+                    c.label.toLowerCase().includes('back') ||
+                    c.label.toLowerCase().includes('rear') ||
+                    c.label.toLowerCase().includes('環境')
+                );
+
+                if (backCamera) {
+                    select.value = backCamera.deviceId;
+                    return backCamera.deviceId;
+                }
+                return availableCameras[0]?.deviceId;
+            } catch (e) {
+                console.error('Error getting cameras:', e);
+                return null;
+            }
+        }
+
+        // Initialize MediaPipe Pose
+        async function initPose() {
+            pose = new Pose({
+                locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${file}`;
+                }
+            });
+
+            pose.setOptions({
+                modelComplexity: config.modelComplexity,
+                smoothLandmarks: true,
+                enableSegmentation: false,
+                smoothSegmentation: false,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+
+            pose.onResults(onResults);
+
+            // Get camera ID
+            currentCameraId = await getCameras();
+
+            // Start camera
+            await startCamera(currentCameraId);
+        }
+
+        async function startCamera(deviceId) {
+            if (camera) {
+                camera.stop();
+            }
+
+            const constraints = {
+                video: {
+                    deviceId: deviceId ? { exact: deviceId } : undefined,
+                    facingMode: deviceId ? undefined : 'environment',
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    frameRate: { ideal: 30, max: 30 }
+                }
+            };
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+
+                currentCameraId = stream.getVideoTracks()[0].getSettings().deviceId;
+
+                video.onloadedmetadata = () => {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    ghostCanvas.width = video.videoWidth;
+                    ghostCanvas.height = video.videoHeight;
+
+                    camera = new Camera(video, {
+                        onFrame: async () => {
+                            if (isRunning && pose && !isPlaybackMode) {
+                                await pose.send({ image: video });
+                            }
+                        },
+                        width: video.videoWidth,
+                        height: video.videoHeight
+                    });
+
+                    camera.start();
+                    loading.classList.add('hidden');
+                    showHint('動きを追跡中... 🎯', 2500);
+                };
+            } catch (e) {
+                console.error('Camera error:', e);
+                loading.innerHTML = `
+                    <div style="color: #ff4757; font-size: 24px;">📷</div>
+                    <div style="margin-top: 15px;">Camera Access Required</div>
+                    <div style="font-size: 12px; margin-top: 10px; opacity: 0.7;">
+                        カメラへのアクセスを許可してください<br>
+                        設定 → プライバシー → カメラ
+                    </div>
+                `;
+            }
+        }
+
+        async function switchCamera(deviceId) {
+            currentCameraId = deviceId;
+            showHint('カメラ切替中...', 1500);
+            await startCamera(deviceId);
+        }
+
+        async function updateQuality(value) {
+            config.modelComplexity = parseInt(value);
+            showHint(['Lite Mode', 'Standard Mode', 'High Quality Mode'][value], 1500);
+
+            if (pose) {
+                pose.setOptions({
+                    modelComplexity: config.modelComplexity,
+                    smoothLandmarks: true,
+                    enableSegmentation: false,
+                    smoothSegmentation: false,
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                });
+            }
+        }
+
+        // Smooth position with exponential moving average
+        function smoothPosition(current, last, factor = config.smoothing) {
+            if (!last) return current;
+            return {
+                x: last.x + (current.x - last.x) * factor,
+                y: last.y + (current.y - last.y) * factor,
+                visibility: current.visibility
+            };
+        }
+
+        // Process pose results
+        function onResults(results) {
+            // Update FPS
+            frameCount++;
+            const now = performance.now();
+            if (now - lastTime >= 1000) {
+                currentFps = frameCount;
+                fpsDisplay.textContent = currentFps;
+                frameCount = 0;
+                lastTime = now;
+            }
+
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Mirror the canvas to match video
+            ctx.save();
+            ctx.scale(-1, 1);
+            ctx.translate(-canvas.width, 0);
+
+            if (results.poseLandmarks) {
+                trackingStatus.textContent = '✓ Active';
+                trackingStatus.style.color = '#00ff88';
+
+                const landmarks = results.poseLandmarks;
+
+                // Draw skeleton
+                if (config.skeleton) {
+                    drawSkeleton(ctx, landmarks, 1);
+                }
+
+                // Get wrist positions (LEFT and RIGHT are swapped in mirrored view)
+                const leftWrist = landmarks[16]; // Right wrist appears as left in mirror
+                const rightWrist = landmarks[15]; // Left wrist appears as right in mirror
+
+                // Smooth and track left wrist
+                if (leftWrist && leftWrist.visibility > 0.5) {
+                    const smoothedLeft = smoothPosition(leftWrist, lastLeftWrist);
+                    lastLeftWrist = smoothedLeft;
+
+                    if (config.leftTrail) {
+                        leftTrail.push({
+                            x: smoothedLeft.x * canvas.width,
+                            y: smoothedLeft.y * canvas.height,
+                            time: Date.now()
+                        });
+                        if (leftTrail.length > config.trailLength) {
+                            leftTrail.shift();
+                        }
+                    }
+                }
+
+                // Smooth and track right wrist
+                if (rightWrist && rightWrist.visibility > 0.5) {
+                    const smoothedRight = smoothPosition(rightWrist, lastRightWrist);
+                    lastRightWrist = smoothedRight;
+
+                    if (config.rightTrail) {
+                        rightTrail.push({
+                            x: smoothedRight.x * canvas.width,
+                            y: smoothedRight.y * canvas.height,
+                            time: Date.now()
+                        });
+                        if (rightTrail.length > config.trailLength) {
+                            rightTrail.shift();
+                        }
+                    }
+                }
+
+                // Draw trails
+                if (config.leftTrail) drawTrail(ctx, leftTrail, config.leftColor);
+                if (config.rightTrail) drawTrail(ctx, rightTrail, config.rightColor);
+
+                // Record frame if recording
+                if (isRecording) {
+                    recordedFrames.push({
+                        landmarks: landmarks.map(l => ({x: l.x, y: l.y, visibility: l.visibility})),
+                        leftTrail: leftTrail.map(p => ({x: p.x, y: p.y})),
+                        rightTrail: rightTrail.map(p => ({x: p.x, y: p.y})),
+                        timestamp: Date.now()
+                    });
+                }
+            } else {
+                trackingStatus.textContent = '○ Searching...';
+                trackingStatus.style.color = '#FFD93D';
+
+                // Still draw existing trails
+                if (config.leftTrail) drawTrail(ctx, leftTrail, config.leftColor);
+                if (config.rightTrail) drawTrail(ctx, rightTrail, config.rightColor);
+            }
+
+            ctx.restore();
+        }
+
+        // Draw skeleton
+        function drawSkeleton(context, landmarks, alpha = 1) {
+            const connections = [
+                // Torso
+                [11, 12], [11, 23], [12, 24], [23, 24],
+                // Left arm
+                [11, 13], [13, 15],
+                // Right arm
+                [12, 14], [14, 16],
+                // Left leg
+                [23, 25], [25, 27],
+                // Right leg
+                [24, 26], [26, 28]
+            ];
+
+            // Draw connections
+            context.strokeStyle = `rgba(255, 255, 255, ${0.8 * alpha})`;
+            context.lineWidth = 3;
+            context.lineCap = 'round';
+
+            connections.forEach(([i, j]) => {
+                const p1 = landmarks[i];
+                const p2 = landmarks[j];
+
+                if (p1.visibility > 0.5 && p2.visibility > 0.5) {
+                    context.beginPath();
+                    context.moveTo(p1.x * canvas.width, p1.y * canvas.height);
+                    context.lineTo(p2.x * canvas.width, p2.y * canvas.height);
+                    context.stroke();
+                }
+            });
+
+            // Draw key joints
+            const keyJoints = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
+            keyJoints.forEach(i => {
+                const landmark = landmarks[i];
+                if (landmark.visibility > 0.5) {
+                    context.beginPath();
+                    context.arc(
+                        landmark.x * canvas.width,
+                        landmark.y * canvas.height,
+                        6,
+                        0,
+                        2 * Math.PI
+                    );
+                    // Color wrists differently
+                    if (i === 15) {
+                        context.fillStyle = config.rightColor;
+                    } else if (i === 16) {
+                        context.fillStyle = config.leftColor;
+                    } else {
+                        context.fillStyle = `rgba(255, 255, 255, ${0.9 * alpha})`;
+                    }
+                    context.fill();
+                }
+            });
+        }
+
+        // Draw trail with gradient
+        function drawTrail(context, trail, color) {
+            if (trail.length < 2) return;
+
+            context.lineCap = 'round';
+            context.lineJoin = 'round';
+
+            for (let i = 1; i < trail.length; i++) {
+                const progress = i / trail.length;
+                const alpha = Math.pow(progress, 0.7) * 0.95;
+                const width = 2 + progress * 8;
+
+                context.beginPath();
+                context.strokeStyle = hexToRgba(color, alpha);
+                context.lineWidth = width;
+                context.moveTo(trail[i - 1].x, trail[i - 1].y);
+                context.lineTo(trail[i].x, trail[i].y);
+                context.stroke();
+            }
+
+            // Draw glow at current position
+            if (trail.length > 0) {
+                const last = trail[trail.length - 1];
+                context.beginPath();
+                const gradient = context.createRadialGradient(
+                    last.x, last.y, 0,
+                    last.x, last.y, 25
+                );
+                gradient.addColorStop(0, hexToRgba(color, 0.9));
+                gradient.addColorStop(0.5, hexToRgba(color, 0.3));
+                gradient.addColorStop(1, hexToRgba(color, 0));
+                context.fillStyle = gradient;
+                context.arc(last.x, last.y, 25, 0, Math.PI * 2);
+                context.fill();
+            }
+        }
+
+        // Helper: hex to rgba
+        function hexToRgba(hex, alpha) {
+            const r = parseInt(hex.slice(1, 3), 16);
+            const g = parseInt(hex.slice(3, 5), 16);
+            const b = parseInt(hex.slice(5, 7), 16);
+            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        }
+
+        // UI Functions
+        function toggleSettings() {
+            const panel = document.getElementById('settingsPanel');
+            panel.classList.toggle('show');
+        }
+
+        function toggleOption(option) {
+            config[option] = !config[option];
+            const toggle = document.getElementById('toggle' + option.charAt(0).toUpperCase() + option.slice(1));
+            toggle.classList.toggle('active');
+
+            if (option === 'leftTrail' && !config.leftTrail) leftTrail = [];
+            if (option === 'rightTrail' && !config.rightTrail) rightTrail = [];
+        }
+
+        function updateTrailLength(value) {
+            config.trailLength = parseInt(value);
+        }
+
+        function clearTrails() {
+            leftTrail = [];
+            rightTrail = [];
+            lastLeftWrist = null;
+            lastRightWrist = null;
+            showHint('Trails Cleared', 1000);
+        }
+
+        function togglePause() {
+            isRunning = !isRunning;
+            const btn = document.getElementById('pauseBtn');
+            btn.textContent = isRunning ? '⏸️' : '▶️';
+            showHint(isRunning ? 'Resumed' : 'Paused', 1000);
+        }
+
+        function toggleRecording() {
+            isRecording = !isRecording;
+            const btn = document.getElementById('recordBtn');
+
+            if (isRecording) {
+                recordedFrames = [];
+                btn.classList.remove('btn-primary');
+                btn.classList.add('btn-danger');
+                btn.innerHTML = '<span>⏹</span> Stop';
+                showHint('Recording Started...', 1500);
+            } else {
+                btn.classList.remove('btn-danger');
+                btn.classList.add('btn-primary');
+                btn.innerHTML = '<span>⏺</span> Record';
+
+                if (recordedFrames.length > 0) {
+                    saveRecording();
+                    showHint(`Saved ${recordedFrames.length} frames`, 2000);
+                }
+            }
+        }
+
+        function saveRecording() {
+            const data = {
+                version: 1,
+                frames: recordedFrames,
+                config: {
+                    leftColor: config.leftColor,
+                    rightColor: config.rightColor
+                },
+                canvasSize: {
+                    width: canvas.width,
+                    height: canvas.height
+                },
+                timestamp: new Date().toISOString(),
+                duration: recordedFrames.length > 0 ?
+                    recordedFrames[recordedFrames.length - 1].timestamp - recordedFrames[0].timestamp : 0
+            };
+
+            const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `motion-${new Date().toISOString().slice(0,19).replace(/[:-]/g, '')}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // Load and playback recording
+        function loadRecording(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    playbackData = JSON.parse(e.target.result);
+                    if (!playbackData.frames || playbackData.frames.length === 0) {
+                        showHint('Invalid recording file', 2000);
+                        return;
+                    }
+
+                    // Start comparison mode (ghost overlay)
+                    startComparison();
+                    showHint('Ghost mode enabled - compare your movement!', 3000);
+                } catch (err) {
+                    showHint('Failed to load file', 2000);
+                    console.error(err);
+                }
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        }
+
+        function startComparison() {
+            isPlaybackMode = true;
+            playbackIndex = 0;
+            isPlaying = true;
+            lastPlaybackTime = performance.now();
+
+            document.getElementById('comparisonIndicator').classList.add('show');
+            document.getElementById('playbackControls').classList.add('show');
+            document.getElementById('playPauseBtn').textContent = '⏸️';
+
+            updatePlaybackUI();
+            playbackLoop();
+        }
+
+        function stopComparison() {
+            isPlaybackMode = false;
+            isPlaying = false;
+            playbackData = null;
+
+            if (playbackAnimationId) {
+                cancelAnimationFrame(playbackAnimationId);
+            }
+
+            document.getElementById('comparisonIndicator').classList.remove('show');
+            document.getElementById('playbackControls').classList.remove('show');
+
+            ghostCtx.clearRect(0, 0, ghostCanvas.width, ghostCanvas.height);
+        }
+
+        function playbackLoop() {
+            if (!isPlaybackMode || !playbackData) return;
+
+            if (isPlaying) {
+                const now = performance.now();
+                const elapsed = now - lastPlaybackTime;
+                const targetFrameTime = 1000 / 30 / playbackSpeed;
+
+                if (elapsed >= targetFrameTime) {
+                    playbackIndex++;
+                    if (playbackIndex >= playbackData.frames.length) {
+                        playbackIndex = 0; // Loop
+                    }
+                    lastPlaybackTime = now;
+                    renderGhostFrame();
+                    updatePlaybackUI();
+                }
+            }
+
+            playbackAnimationId = requestAnimationFrame(playbackLoop);
+        }
+
+        function renderGhostFrame() {
+            if (!playbackData || playbackIndex >= playbackData.frames.length) return;
+
+            const frame = playbackData.frames[playbackIndex];
+            const scaleX = ghostCanvas.width / (playbackData.canvasSize?.width || ghostCanvas.width);
+            const scaleY = ghostCanvas.height / (playbackData.canvasSize?.height || ghostCanvas.height);
+
+            ghostCtx.clearRect(0, 0, ghostCanvas.width, ghostCanvas.height);
+
+            ghostCtx.save();
+            ghostCtx.scale(-1, 1);
+            ghostCtx.translate(-ghostCanvas.width, 0);
+
+            // Draw ghost skeleton
+            if (frame.landmarks && config.skeleton) {
+                drawSkeleton(ghostCtx, frame.landmarks, 0.5);
+            }
+
+            // Draw ghost trails
+            const ghostLeftColor = playbackData.config?.leftColor || '#00BFFF';
+            const ghostRightColor = playbackData.config?.rightColor || '#FF6B6B';
+
+            if (frame.leftTrail && config.leftTrail) {
+                const scaledTrail = frame.leftTrail.map(p => ({
+                    x: p.x * scaleX,
+                    y: p.y * scaleY
+                }));
+                drawGhostTrail(ghostCtx, scaledTrail, ghostLeftColor);
+            }
+
+            if (frame.rightTrail && config.rightTrail) {
+                const scaledTrail = frame.rightTrail.map(p => ({
+                    x: p.x * scaleX,
+                    y: p.y * scaleY
+                }));
+                drawGhostTrail(ghostCtx, scaledTrail, ghostRightColor);
+            }
+
+            ghostCtx.restore();
+        }
+
+        function drawGhostTrail(context, trail, color) {
+            if (trail.length < 2) return;
+
+            context.lineCap = 'round';
+            context.lineJoin = 'round';
+            context.setLineDash([5, 5]);
+
+            for (let i = 1; i < trail.length; i++) {
+                const progress = i / trail.length;
+                const alpha = progress * 0.4;
+                const width = 2 + progress * 4;
+
+                context.beginPath();
+                context.strokeStyle = hexToRgba(color, alpha);
+                context.lineWidth = width;
+                context.moveTo(trail[i - 1].x, trail[i - 1].y);
+                context.lineTo(trail[i].x, trail[i].y);
+                context.stroke();
+            }
+
+            context.setLineDash([]);
+        }
+
+        function togglePlayback() {
+            isPlaying = !isPlaying;
+            document.getElementById('playPauseBtn').textContent = isPlaying ? '⏸️' : '▶️';
+            if (isPlaying) {
+                lastPlaybackTime = performance.now();
+            }
+        }
+
+        function seekPlayback(value) {
+            if (!playbackData) return;
+            playbackIndex = Math.floor((value / 100) * (playbackData.frames.length - 1));
+            renderGhostFrame();
+            updatePlaybackUI();
+        }
+
+        function setSpeed(speed) {
+            playbackSpeed = speed;
+            document.querySelectorAll('.speed-btn').forEach(btn => {
+                btn.classList.toggle('active', parseFloat(btn.textContent) === speed);
+            });
+        }
+
+        function updatePlaybackUI() {
+            if (!playbackData) return;
+
+            const slider = document.getElementById('playbackSlider');
+            const timeDisplay = document.getElementById('playbackTime');
+
+            const progress = (playbackIndex / (playbackData.frames.length - 1)) * 100;
+            slider.value = progress;
+
+            const currentSec = Math.floor(playbackIndex / 30);
+            const totalSec = Math.floor(playbackData.frames.length / 30);
+            timeDisplay.textContent = `${formatTime(currentSec)} / ${formatTime(totalSec)}`;
+        }
+
+        function formatTime(seconds) {
+            const min = Math.floor(seconds / 60);
+            const sec = seconds % 60;
+            return `${min}:${sec.toString().padStart(2, '0')}`;
+        }
+
+        // Close settings when clicking outside
+        document.addEventListener('click', (e) => {
+            const panel = document.getElementById('settingsPanel');
+            const settingsBtn = document.querySelector('.settings-btn');
+            if (!panel.contains(e.target) && !settingsBtn.contains(e.target)) {
+                panel.classList.remove('show');
+            }
+        });
+
+        // Prevent zoom on double tap (mobile)
+        let lastTouchEnd = 0;
+        document.addEventListener('touchend', (e) => {
+            const now = Date.now();
+            if (now - lastTouchEnd <= 300) {
+                e.preventDefault();
+            }
+            lastTouchEnd = now;
+        }, { passive: false });
+
+        // Prevent pinch zoom
+        document.addEventListener('touchmove', (e) => {
+            if (e.touches.length > 1) {
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        // Handle orientation change
+        window.addEventListener('orientationchange', () => {
+            setTimeout(() => {
+                if (video.videoWidth && video.videoHeight) {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    ghostCanvas.width = video.videoWidth;
+                    ghostCanvas.height = video.videoHeight;
+                }
+            }, 100);
+        });
+
+        // Initialize
+        initColorPickers();
+        initPose();
+    </script>
+</body>
+</html>
