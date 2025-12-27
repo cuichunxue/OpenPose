@@ -922,9 +922,12 @@
             await startCamera(currentCameraId);
         }
 
+        let processingStarted = false;
+
         async function startCamera(deviceId) {
-            if (camera) {
-                camera.stop();
+            // Stop previous video tracks
+            if (video.srcObject) {
+                video.srcObject.getTracks().forEach(track => track.stop());
             }
 
             const constraints = {
@@ -943,15 +946,26 @@
 
                 currentCameraId = stream.getVideoTracks()[0].getSettings().deviceId;
 
-                video.onloadedmetadata = () => {
-                    canvas.width = video.videoWidth;
-                    canvas.height = video.videoHeight;
-                    ghostCanvas.width = video.videoWidth;
-                    ghostCanvas.height = video.videoHeight;
+                // Wait for video to be ready
+                await new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        video.play();
+                        resolve();
+                    };
+                });
 
-                    // Use requestAnimationFrame for processing
+                // Update canvas dimensions
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                ghostCanvas.width = video.videoWidth;
+                ghostCanvas.height = video.videoHeight;
+
+                // Start processing loop only once
+                if (!processingStarted) {
+                    processingStarted = true;
                     processFrame();
-                };
+                }
+
             } catch (e) {
                 console.error('Camera error:', e);
                 loading.innerHTML = `
@@ -1480,6 +1494,20 @@
                 const stream = await navigator.mediaDevices.getUserMedia(constraints);
                 video.srcObject = stream;
                 currentCameraId = stream.getVideoTracks()[0].getSettings().deviceId;
+
+                // Wait for video to be ready
+                await new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        video.play();
+                        resolve();
+                    };
+                });
+
+                // Update canvas dimensions
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                ghostCanvas.width = video.videoWidth;
+                ghostCanvas.height = video.videoHeight;
 
                 // Update dropdown
                 if (document.getElementById('cameraSelect')) {
